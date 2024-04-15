@@ -116,7 +116,7 @@ namespace FileTransferServer
                     FileInfo fileInfo = new FileInfo(filename);
                     byte[] sizeBuffer = System.Text.Encoding.ASCII.GetBytes(fileInfo.Length.ToString());
                     clientSocket.Send(sizeBuffer);
-                    Console.WriteLine("file size sent is: {0}", sizeBuffer);
+                    Console.WriteLine("file size sent is: {0}", sizeBuffer.ToString());
 
                     // Open the file
                     FileStream fileStream = new FileStream(filename, FileMode.Open, FileAccess.Read);
@@ -130,9 +130,15 @@ namespace FileTransferServer
                     }
 
                     Console.WriteLine("File sent successfully");
+                    fileStream.Close();
+                    System.Threading.Thread.Sleep(500);
+                    // Send the MD5
+                    byte[] sentMD5 = System.Text.Encoding.ASCII.GetBytes(md5Hash);
+                    clientSocket.Send(sentMD5);
+                    Console.WriteLine("MD5 Sent is: {0}", md5Hash);
+                    
 
                     // Clean up
-                    fileStream.Close();
                     clientSocket.Shutdown(SocketShutdown.Both);
                     clientSocket.Close();
                 }
