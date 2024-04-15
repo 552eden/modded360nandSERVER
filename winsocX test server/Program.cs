@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Net.NetworkInformation;
 using Microsoft.Win32;
 
 namespace FileTransferServer
@@ -58,6 +59,26 @@ namespace FileTransferServer
             }
         }
 
+        static void printIP()
+        {
+            NetworkInterface[] networkInterfaces = NetworkInterface.GetAllNetworkInterfaces();
+
+            foreach (NetworkInterface networkInterface in networkInterfaces)
+            {
+                Console.WriteLine($"Interface: {networkInterface.Name}");
+
+                IPInterfaceProperties ipProperties = networkInterface.GetIPProperties();
+                foreach (UnicastIPAddressInformation ip in ipProperties.UnicastAddresses)
+                {
+                    if (ip.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork) // Check for IPv4 address
+                    {
+                        Console.WriteLine($"  IPv4 Address: {ip.Address}");
+                    }
+                }
+                Console.WriteLine();
+            }
+        }
+
 
 
         static void Main(string[] args)
@@ -66,7 +87,9 @@ namespace FileTransferServer
             IPAddress ipAddr = IPAddress.Any;
             IPEndPoint localEndPoint = new IPEndPoint(ipAddr, port);
             Socket listener = new Socket(ipAddr.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-
+            Console.WriteLine("your IP addresses are:");
+            printIP();
+            Console.WriteLine("please use the IP in the same network as your xbox");
             try
             {
                 listener.Bind(localEndPoint);
