@@ -79,6 +79,80 @@ namespace FileTransferServer
             }
         }
 
+        static int sendFileToXbox(Socket clientSocket)
+        {
+            string filename = "";
+            Console.WriteLine("Overriding file name with users choice");
+
+            try
+            {
+                Thread thread = new Thread(() => filename = SelectFile());
+                thread.SetApartmentState(ApartmentState.STA); //Set the thread to STA
+                thread.Start();
+                thread.Join(); //Wait for the thread to end
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }
+
+            if (!string.IsNullOrEmpty(filename))
+            {
+                Console.WriteLine($"Selected file: {filename}");
+                // Process the selected file here
+            }
+            else
+            {
+                Console.WriteLine("Operation canceled.");
+                // Clean up
+                clientSocket.Shutdown(SocketShutdown.Both);
+                clientSocket.Close();
+                return 0;
+            }
+            Console.WriteLine($"Selected file: {Path.GetFileName(filename)}");
+
+            // Calculate MD5 hash
+            string md5Hash = CalculateMD5(filename);
+
+            // Print the result
+            Console.WriteLine("MD5 hash of the file:");
+            Console.WriteLine(md5Hash);
+
+
+            // Send the expected file size
+            FileInfo fileInfo = new FileInfo(filename);
+            byte[] sizeBuffer = System.Text.Encoding.ASCII.GetBytes(fileInfo.Length.ToString());
+            clientSocket.Send(sizeBuffer);
+            Console.WriteLine("file size sent is: {0}", fileInfo.Length.ToString());
+
+            // Open the file
+            FileStream fileStream = new FileStream(filename, FileMode.Open, FileAccess.Read);
+
+            // Send the file
+            byte[] buffer = new byte[1024];
+            int bytesRead;
+            while ((bytesRead = fileStream.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                clientSocket.Send(buffer, bytesRead, SocketFlags.None);
+            }
+
+            Console.WriteLine("File sent successfully");
+            fileStream.Close();
+            System.Threading.Thread.Sleep(500);
+            // Send the MD5
+            byte[] sentMD5 = System.Text.Encoding.ASCII.GetBytes(md5Hash);
+            clientSocket.Send(sentMD5);
+            Console.WriteLine("MD5 Sent is: {0}", md5Hash);
+
+
+            // Clean up
+            clientSocket.Shutdown(SocketShutdown.Both);
+            clientSocket.Close();
+
+            return 1;
+        }
+    
+
 
 
         static void Main(string[] args)
@@ -90,6 +164,7 @@ namespace FileTransferServer
             Console.WriteLine("your IP addresses are:");
             printIP();
             Console.WriteLine("please use the IP in the same network as your xbox");
+            int sentFileResult = 0;
             try
             {
                 listener.Bind(localEndPoint);
@@ -101,69 +176,28 @@ namespace FileTransferServer
                 {
                     Socket clientSocket = listener.Accept();
                     Console.WriteLine("Accepted new connection from {0}", clientSocket.RemoteEndPoint);
+                    // Receive the filename to check if we need to send file or rceieve it
 
-                    // Receive the filename
-                    
                     byte[] filenameBuffer = new byte[1024];
                     int bytesReceived = clientSocket.Receive(filenameBuffer);
                     string filename = System.Text.Encoding.ASCII.GetString(filenameBuffer, 0, bytesReceived);
+                    Console.WriteLine("file name test");
+                    Console.WriteLine(filename);
+                    Console.WriteLine("end filename test");
                     Console.WriteLine("Received filename: {0}", filename);
-                    Console.WriteLine("Overriding file name with users choice");
-
-                    
-                    Thread thread = new Thread(() => filename = SelectFile());
-                    thread.SetApartmentState(ApartmentState.STA); //Set the thread to STA
-                    thread.Start();
-                    thread.Join(); //Wait for the thread to end
-
-                    if (!string.IsNullOrEmpty(filename))
+                    if(filename == "game:\\updflash.bin")
                     {
-                        Console.WriteLine($"Selected file: {filename}");
-                        // Process the selected file here
+                        sentFileResult = sendFileToXbox(clientSocket);
+                        if(sentFileResult == 1) { Console.WriteLine("sent file seccesfully"); }
+                        else { Console.WriteLine("error sending file");  }
                     }
-                    else
+                    else if (filename == "game:\\flashdmp.bin")
                     {
-                        Console.WriteLine("Operation canceled.");
+                        Console.WriteLine("inset file receiving here");
+
                     }
-                    Console.WriteLine($"Selected file: {Path.GetFileName(filename)}");
-
-                    // Calculate MD5 hash
-                    string md5Hash = CalculateMD5(filename);
-
-                    // Print the result
-                    Console.WriteLine("MD5 hash of the file:");
-                    Console.WriteLine(md5Hash);
-
-
-                    // Send the expected file size
-                    FileInfo fileInfo = new FileInfo(filename);
-                    byte[] sizeBuffer = System.Text.Encoding.ASCII.GetBytes(fileInfo.Length.ToString());
-                    clientSocket.Send(sizeBuffer);
-                    Console.WriteLine("file size sent is: {0}", sizeBuffer.ToString());
-
-                    // Open the file
-                    FileStream fileStream = new FileStream(filename, FileMode.Open, FileAccess.Read);
-
-                    // Send the file
-                    byte[] buffer = new byte[1024];
-                    int bytesRead;
-                    while ((bytesRead = fileStream.Read(buffer, 0, buffer.Length)) > 0)
-                    {
-                        clientSocket.Send(buffer, bytesRead, SocketFlags.None);
-                    }
-
-                    Console.WriteLine("File sent successfully");
-                    fileStream.Close();
-                    System.Threading.Thread.Sleep(500);
-                    // Send the MD5
-                    byte[] sentMD5 = System.Text.Encoding.ASCII.GetBytes(md5Hash);
-                    clientSocket.Send(sentMD5);
-                    Console.WriteLine("MD5 Sent is: {0}", md5Hash);
                     
 
-                    // Clean up
-                    clientSocket.Shutdown(SocketShutdown.Both);
-                    clientSocket.Close();
                 }
             }
             catch (Exception e)
