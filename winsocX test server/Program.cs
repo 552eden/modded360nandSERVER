@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Net.NetworkInformation;
 using Microsoft.Win32;
+using System.Reflection.Metadata.Ecma335;
 
 namespace FileTransferServer
 {
@@ -51,6 +52,33 @@ namespace FileTransferServer
             {
                 // Get the selected file name
                 return openFileDialog.FileName;
+            }
+            else
+            {
+                // User canceled the operation
+                return null;
+            }
+        }
+
+        // Function to save a file
+        static string saveFile()
+        {
+            SaveFileDialog saveFileDialog = new SaveFileDialog();
+
+            // Set initial directory (optional)
+            saveFileDialog.InitialDirectory = Environment.CurrentDirectory;
+
+            // Set the title of the dialog
+            saveFileDialog.Title = "Save File As";
+
+            // Filter for specific file types (optional)
+            saveFileDialog.Filter = "Nand Files (*.bin)|*.bin|All files (*.*)|*.*";
+
+            // Show the dialog and check if the user clicked OK
+            if (saveFileDialog.ShowDialog() == DialogResult.OK)
+            {
+                // Get the selected file name
+                return saveFileDialog.FileName;
             }
             else
             {
@@ -151,8 +179,121 @@ namespace FileTransferServer
 
             return 1;
         }
-    
 
+
+        static int recieveFileFromXbox(Socket clientSocket)
+        {
+            string filename = "";
+            Console.WriteLine("Overriding file name with users choice");
+            int md5same = 0;
+
+            try
+            {
+                Thread thread = new Thread(() => filename = saveFile());
+                thread.SetApartmentState(ApartmentState.STA); //Set the thread to STA
+                thread.Start();
+                thread.Join(); //Wait for the thread to end
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }
+
+            if (!string.IsNullOrEmpty(filename))
+            {
+                Console.WriteLine($"Selected file: {filename}");
+                // Process the selected file here
+            }
+            else
+            {
+                Console.WriteLine("Operation canceled.");
+                // Clean up
+                clientSocket.Shutdown(SocketShutdown.Both);
+                clientSocket.Close();
+                return 0;
+            }
+            Console.WriteLine($"Selected file: {Path.GetFileName(filename)}");
+
+            try
+            {
+                // Send the start message
+                byte[] startMessage = Encoding.ASCII.GetBytes("START_TRANSMISSION");
+                clientSocket.Send(startMessage);
+
+
+
+
+                // Receive file size
+                byte[] fileSizeBuffer = new byte[4];
+                clientSocket.Receive(fileSizeBuffer, 4, SocketFlags.None);
+                int fileSize = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(fileSizeBuffer, 0));
+                Console.WriteLine("Received file size: " + fileSize);
+
+                // Receive additional data (string)
+                byte[] additionalDataLengthBuffer = new byte[4];
+                clientSocket.Receive(additionalDataLengthBuffer, 4, SocketFlags.None);
+                int additionalDataLength = IPAddress.NetworkToHostOrder(BitConverter.ToInt32(additionalDataLengthBuffer, 0));
+                byte[] additionalDataBuffer = new byte[additionalDataLength];
+                clientSocket.Receive(additionalDataBuffer, additionalDataLength, SocketFlags.None);
+                string additionalData = Encoding.ASCII.GetString(additionalDataBuffer);
+                Console.WriteLine("Received additional data: " + additionalData);
+
+                // Receive file data
+                using (FileStream fileStream = new FileStream(filename, FileMode.Create, FileAccess.Write))
+                {
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    int totalBytesRead = 0;
+                    while ((bytesRead = clientSocket.Receive(buffer, 1024, SocketFlags.None)) > 0)
+                    {
+                        fileStream.Write(buffer, 0, bytesRead);
+                        totalBytesRead += bytesRead;
+                        if (totalBytesRead >= fileSize)
+                            break;
+                    }
+                    Console.WriteLine("Received file data");
+                }
+
+                // Calculate MD5 hash
+                string md5Hash = CalculateMD5(filename);
+
+                if (md5Hash == additionalData)
+                {
+                    Console.WriteLine("Hashes are the same! Hash: {0}", md5Hash);
+                    md5same = 1;
+                    clientSocket.Shutdown(SocketShutdown.Both);
+                    clientSocket.Close();
+                    return 1;
+                }
+                else
+                {
+                    Console.WriteLine("hashes are not the same!");
+                    Console.WriteLine("calculated Hash: {0}", md5Hash);
+                    Console.WriteLine("Recived Hash: {0} ", additionalData);
+                    clientSocket.Shutdown(SocketShutdown.Both);
+                    clientSocket.Close();
+                    return 0;
+                }
+            }
+            catch (SocketException ex)
+            {
+                Console.WriteLine("SocketException: " + ex.ErrorCode + ", " + ex.Message);
+                Console.WriteLine("Socket closed from xbox 360 side, this should be fine");
+                if (md5same == 1) { return 1; }
+                else
+                {
+                    return 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error: " + ex.Message);
+                return 0;
+            }
+
+        }
+
+        
 
 
         static void Main(string[] args)
@@ -165,6 +306,7 @@ namespace FileTransferServer
             printIP();
             Console.WriteLine("please use the IP in the same network as your xbox");
             int sentFileResult = 0;
+            int recievedFileResult = 0;
             try
             {
                 listener.Bind(localEndPoint);
@@ -181,6 +323,8 @@ namespace FileTransferServer
                     byte[] filenameBuffer = new byte[1024];
                     int bytesReceived = clientSocket.Receive(filenameBuffer);
                     string filename = System.Text.Encoding.ASCII.GetString(filenameBuffer, 0, bytesReceived);
+
+
                     Console.WriteLine("file name test");
                     Console.WriteLine(filename);
                     Console.WriteLine("end filename test");
@@ -193,7 +337,9 @@ namespace FileTransferServer
                     }
                     else if (filename == "game:\\flashdmp.bin")
                     {
-                        Console.WriteLine("inset file receiving here");
+                        recievedFileResult = recieveFileFromXbox(clientSocket);
+                        if (recievedFileResult == 1) { Console.WriteLine("recieved file seccesfully"); }
+                        else { Console.WriteLine("error sending file"); }
 
                     }
                     
